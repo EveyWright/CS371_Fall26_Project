@@ -18,25 +18,24 @@ import threading
 clients = {}
 count = 1
 
+lock = threading.Lock()
+
 def handle_client(conn, addr):
     print(f"[NEW CONNECTION] {addr}")
-    client_num = clients[conn]
     while True:
         try:
             msg = conn.recv(1024)
             if not msg:
                 break
-
-            msg = f'\nClient {client_num}: ' + msg.decode()
-            msg = msg.encode()
-            for c in clients:
-                if c != conn:
-                    c.send(msg)
-        except:
+            with lock:
+                others = [c for c in clients if c != conn]
+            for c in others:
+                c.send(msg)
+        except OSError:
             break
     conn.close()
-    if conn in clients:
-        clients.pop(conn)
+    with lock:
+        clients.pop(conn, None)
     print(f"[DISCONNECTED] {addr}")
 
 
@@ -48,13 +47,28 @@ server_socket.listen()
 
 print("Server listening...")
 
-while True:
-    conn, addr = server_socket.accept()
-    clients[conn] = count
-    count += 1
-    if(count >= 2):
-        thread = threading.Thread(target=handle_client, args=(conn, addr))
-        thread.start()
+server_socket.settimeout(1)  # Optional: set a timeout for accept() to allow graceful shutdown checks
+try:
+    while True:
+        try:
+            conn, addr = server_socket.accept()
+        except socket.timeout:
+            continue
+        with lock:
+            side = "left" if len(clients) == 0 else "right"
+            clients[conn] = side
+            ready = len(clients) == 2
 
+        threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
 
+        if ready:
+            # Both players are here, so release them into the game.
+            with lock:
+                for c, s in clients.items():
+                    c.send(f"start,640,480,{s}\n".encode())
+except KeyboardInterrupt:
+    print("Server shutting down...")
+    server_socket.close()
+    for c in clients:
+        c.close()
 

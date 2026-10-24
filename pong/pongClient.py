@@ -176,20 +176,36 @@ def joinServer(ip:str, port:str, errorLabel:tk.Label, app:tk.Tk) -> None:
     # Create a socket and connect to the server
     # You don't have to use SOCK_STREAM, use what you think is best
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        client.connect((ip, int(port)))
+    except Exception as e:
+        errorLabel.config(text=f"Failed to connect to server: {e}")
+        errorLabel.update()
+        return
 
     # Get the required information from your server (screen width, height & player paddle, "left or "right)
-
+    clients = {}
+    start_msg = client.recv(1024).decode().strip()
+    if start_msg.startswith("start"):
+        _, width, height, side = start_msg.split(",")
+        screenWidth = int(width)
+        screenHeight = int(height)
+        clients[client] = side
+    else:
+        errorLabel.config(text="Failed to receive start message from server")
+        errorLabel.update()
+        return
 
     # If you have messages you'd like to show the user use the errorLabel widget like so
     errorLabel.config(text=f"Some update text. You input: IP: {ip}, Port: {port}")
     # You may or may not need to call this, depending on how many times you update the label
     errorLabel.update()     
 
-    screenWidth = 640
-    screenHeight = 480
     # Close this window and start the game with the info passed to you from the server
     app.withdraw()     # Hides the window (we'll kill it later)
-    playGame(screenWidth, screenHeight, ("left"), client)  # User will be either left or right paddle
+    # Receive the initial message from the server to determine the player's side
+    
+    playGame(screenWidth, screenHeight, ("left" if clients[client] == "left" else "right"), client)  # User will be either left or right paddle
     app.quit()         # Kills the window
 
 
