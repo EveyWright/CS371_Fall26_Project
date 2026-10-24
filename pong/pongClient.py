@@ -184,8 +184,17 @@ def joinServer(ip:str, port:str, errorLabel:tk.Label, app:tk.Tk) -> None:
         return
 
     # Get the required information from your server (screen width, height & player paddle, "left or "right)
+        clients = {}
+    errorLabel.config(text="Waiting for opponent...")
     clients = {}
-    start_msg = client.recv(1024).decode().strip()
+    client.settimeout(0.05)
+    while True:
+        try:
+            start_msg = client.recv(1024).decode().strip()
+            break
+        except socket.timeout:
+            app.update()
+    client.settimeout(None)
     if start_msg.startswith("start"):
         _, width, height, side = start_msg.split(",")
         screenWidth = int(width)
