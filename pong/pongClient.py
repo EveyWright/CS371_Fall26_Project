@@ -145,7 +145,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         pygame.draw.rect(screen, WHITE, topWall)
         pygame.draw.rect(screen, WHITE, bottomWall)
         scoreRect = updateScore(lScore, rScore, screen, WHITE, scoreFont)
-        pygame.display.update([topWall, bottomWall, ball, leftPaddle, rightPaddle, scoreRect, winMessage])
+        pygame.display.update()
         clock.tick(60)
         
         # This number should be synchronized between you and your opponent.  If your number is larger
@@ -176,9 +176,34 @@ def joinServer(ip:str, port:str, errorLabel:tk.Label, app:tk.Tk) -> None:
     # Create a socket and connect to the server
     # You don't have to use SOCK_STREAM, use what you think is best
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        client.connect((ip, int(port)))
+    except Exception as e:
+        errorLabel.config(text=f"Failed to connect to server: {e}")
+        errorLabel.update()
+        return
 
     # Get the required information from your server (screen width, height & player paddle, "left or "right)
-
+        clients = {}
+    errorLabel.config(text="Waiting for opponent...")
+    clients = {}
+    client.settimeout(0.05)
+    while True:
+        try:
+            start_msg = client.recv(1024).decode().strip()
+            break
+        except socket.timeout:
+            app.update()
+    client.settimeout(None)
+    if start_msg.startswith("start"):
+        _, width, height, side = start_msg.split(",")
+        screenWidth = int(width)
+        screenHeight = int(height)
+        clients[client] = side
+    else:
+        errorLabel.config(text="Failed to receive start message from server")
+        errorLabel.update()
+        return
 
     # If you have messages you'd like to show the user use the errorLabel widget like so
     errorLabel.config(text=f"Some update text. You input: IP: {ip}, Port: {port}")
@@ -186,9 +211,11 @@ def joinServer(ip:str, port:str, errorLabel:tk.Label, app:tk.Tk) -> None:
     errorLabel.update()     
 
     # Close this window and start the game with the info passed to you from the server
-    #app.withdraw()     # Hides the window (we'll kill it later)
-    #playGame(screenWidth, screenHeight, ("left"|"right"), client)  # User will be either left or right paddle
-    #app.quit()         # Kills the window
+    app.withdraw()     # Hides the window (we'll kill it later)
+    # Receive the initial message from the server to determine the player's side
+    
+    playGame(screenWidth, screenHeight, ("left" if clients[client] == "left" else "right"), client)  # User will be either left or right paddle
+    app.quit()         # Kills the window
 
 
 # This displays the opening screen, you don't need to edit this (but may if you like)
@@ -227,4 +254,5 @@ if __name__ == "__main__":
     # Uncomment the line below if you want to play the game without a server to see how it should work
     # the startScreen() function should call playGame with the arguments given to it by the server this is
     # here for demo purposes only
-    playGame(640, 480,"left",socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+    startScreen()
+    # playGame(640, 480,"left",socket.socket(socket.AF_INET, socket.SOCK_STREAM))
