@@ -1,8 +1,8 @@
 # =================================================================================================
-# Contributing Authors:	    <Anyone who touched the code>
-# Email Addresses:          <Your uky.edu email addresses>
-# Date:                     <The date the file was last edited>
-# Purpose:                  <How this file contributes to the project>
+# Contributing Authors:	    Jacky Lin, James Pennington, Evey Wright
+# Email Addresses:          jli340@uky.edu, jfpe228@uky.edu, elwr223@uky.edu
+# Date:                     11/04/2026
+# Purpose:                  Pong client: connects to the server, plays, and offers rematches
 # Misc:                     <Not Required.  Anything else you might want to include>
 # =================================================================================================
 
@@ -64,6 +64,10 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
     # The right player predicts the ball locally for smooth motion, but always snaps to the
     # authority's ball/score when an update arrives.
     isAuthority = playerPaddle == "left"
+    gameRound = 0           # bumped on every rematch; data tagged with an old round is ignored
+    wantsAgain = False      # we pressed R to ask for a rematch
+    opponentWantsAgain = False
+    infoFont = pygame.font.Font("./assets/fonts/visitor.ttf", 24)
     outBuffer = b""         # bytes not yet accepted by the socket (handles partial sends)
     opponentGone = False    # set when the server or opponent disconnects
     # `buffer` holds partial lines between recv() calls (may start with data that arrived
@@ -86,6 +90,16 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
                 elif event.key == pygame.K_UP:
                     playerPaddleObj.moving = "up"
 
+                # Play again: only once the game has been won and the opponent is still here
+                elif (event.key == pygame.K_r and not wantsAgain and not opponentGone
+                      and (lScore > 4 or rScore > 4)):
+                    wantsAgain = True
+                    outBuffer += b"again\n"
+
+                elif event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+
             elif event.type == pygame.KEYUP:
                 playerPaddleObj.moving = ""
 
@@ -93,16 +107,17 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # Your code here to send an update to the server on your paddle's information,
         # where the ball is and the current score.
         # Feel free to change when the score is updated to suit your needs/requirements
-        
-        # Message formats (one line each):
-        #   left  -> sync,paddleY,ballX,ballY,ballXVel,ballYVel,lScore,rScore
-        #   right -> sync,paddleY
+
+        # Message formats (one line each), tagged with the round so stale data from a previous
+        # game is ignored after a rematch:
+        #   left  -> round,sync,paddleY,ballX,ballY,ballXVel,ballYVel,lScore,rScore
+        #   right -> round,sync,paddleY
         if not opponentGone:
             if isAuthority:
-                msg = (f"{sync},{playerPaddleObj.rect.y},{ball.rect.x},{ball.rect.y},"
+                msg = (f"{gameRound},{sync},{playerPaddleObj.rect.y},{ball.rect.x},{ball.rect.y},"
                        f"{ball.xVel},{ball.yVel},{lScore},{rScore}\n")
             else:
-                msg = f"{sync},{playerPaddleObj.rect.y}\n"
+                msg = f"{gameRound},{sync},{playerPaddleObj.rect.y}\n"
             outBuffer += msg.encode()
             try:
                 sent = client.send(outBuffer)
@@ -126,7 +141,8 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
                 break
             buffer += data.decode()
 
-        # Only the newest complete message matters; older ones are stale
+        # Handle messages in order. Of the game-data lines, only the newest one for the current
+        # round matters; older ones are stale.
         latest = None
         while "\n" in buffer:
             line, buffer = buffer.split("\n", 1)
@@ -134,12 +150,28 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
             if line == "quit":
                 opponentGone = True
                 continue
+            if line == "again":         # opponent asked for a rematch
+                opponentWantsAgain = True
+                continue
+            if line == "restart":       # both players asked for a rematch: reset everything
+                gameRound += 1
+                lScore = rScore = 0
+                sync = 0
+                ball.reset(nowGoing="left")     # same start as a fresh game
+                for paddle in (leftPaddle, rightPaddle):
+                    paddle.rect.y = paddleStartPosY
+                    paddle.moving = ""
+                wantsAgain = opponentWantsAgain = False
+                latest = None           # anything before this line belongs to the old game
+                continue
             parts = line.split(",")
-            if len(parts) in (2, 8):
+            if len(parts) in (3, 9):
                 try:
-                    latest = [int(p) for p in parts]
+                    values = [int(p) for p in parts]
                 except ValueError:
-                    pass
+                    continue
+                if values[0] == gameRound:
+                    latest = values[1:]
 
         if latest is not None:
             opponentPaddleObj.rect.y = latest[1]
@@ -175,6 +207,18 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
             textRect = textSurface.get_rect()
             textRect.center = ((screenWidth/2), screenHeight/2)
             winMessage = screen.blit(textSurface, textRect)
+
+            # Play-again prompt under the win message
+            if wantsAgain:
+                prompt = "Waiting for opponent to accept..."
+            elif opponentWantsAgain:
+                prompt = "Opponent wants a rematch! Press R to accept"
+            else:
+                prompt = "Press R to play again, Esc to quit"
+            promptSurface = infoFont.render(prompt, False, WHITE, (0,0,0))
+            promptRect = promptSurface.get_rect()
+            promptRect.center = ((screenWidth/2), screenHeight/2 + 45)
+            screen.blit(promptSurface, promptRect)
         else:
 
             # ==== Ball Logic =====================================================================
@@ -282,8 +326,8 @@ def joinServer(ip:str, port:str, errorLabel:tk.Label, app:tk.Tk) -> None:
 
     firstLine, leftover = data.split(b"\n", 1)
     parts = firstLine.decode().strip().split(",")
-    if parts == ["full"]:
-        errorLabel.config(text="Server is full (2 players already connected)")
+    if parts == ["quit"]:
+        errorLabel.config(text="Opponent left before the game started, please join again")
         client.close()
         return
     if len(parts) != 4 or parts[0] != "start" or parts[3] not in ("left", "right"):
