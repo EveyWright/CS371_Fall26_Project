@@ -90,7 +90,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # Sends a line stating the sync number, the players paddels y coordinate, the
         # balls' x and y coordinates, and what the score looks like
         try:
-            msg = f"{sync}, {playerPaddleObj.rect.y}, {ball.rect.x}, {ball.rect.y}, {lScore}, {rScore}\n"
+            msg = f"{sync}, {playerPaddleObj.rect.y}, {ball.rect.x}, {ball.rect.y}, {lScore}, {rScore}, {ball.xVel}, {ball.yVel}\n"
             client.send(msg.encode())
         except (BlockingIOError, OSError):
             pass
@@ -106,7 +106,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         while "\n" in buffer:
             line, buffer = buffer.split("\n", 1)
             parts = line.split(",")
-            if len(parts) == 6:
+            if len(parts) == 8:
                 try:
                     oppSync = int(parts[0])
                     oppPaddleY = int(parts[1])
@@ -116,6 +116,8 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
                 if oppSync > sync:
                     ball.rect.x = int(parts[2])
                     ball.rect.y = int(parts[3])
+                    ball.xVel = int(parts[6])
+                    ball.yVel = int(parts[7])
                     lScore = int(parts[4])
                     rScore = int(parts[5])
                     sync = oppSync

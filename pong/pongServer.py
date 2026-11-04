@@ -42,7 +42,7 @@ def handle_client(conn, addr):
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-server_socket.bind(("127.0.0.1", 11111))
+server_socket.bind(("0.0.0.0", 11111))
 server_socket.listen()
 
 print("Server listening...")
